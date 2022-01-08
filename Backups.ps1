@@ -61,7 +61,7 @@ FOREACH ($server in $tsm){
         Move-Item *.tsbak c:\backups\        
         #move *.tsbak $targetpath
         Write-Host "Sending Logs"
-        tsm maintenance send-logs -c 06349942 -f "c:\backups\$filename" -e cmcgee@tableau.com
+        tsm maintenance send-logs -c <your case number> -f "<explicit path to your backup file>" -e <your email address>
         #Pause
     }
 
