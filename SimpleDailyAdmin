@@ -1,0 +1,83 @@
+# Script to run daily Tableau Server Maintenance
+
+#set our runtime environment
+$start_time = Get-Date 
+$today_mm_dd = Get-Date -format "MM-dd"
+$today_mm_dd_yyyy = Get-Date -Format "MM-dd-yyyy"
+#modify this line to point to where you want this script to output its logging.
+$script_log_path = "Path:\to\Logs\"
+$script_log = "$($script_log_path)maintenance_log-$($today_mm_dd).log"
+$tsm_log = "$($script_log_path)tsm_log-$($today_mm_dd).log"
+$time_tracker = "$($script_log_path)maintenance_log.csv"
+
+#Get Tableau install directory and build number
+$install_path = (Get-ChildItem -Path env: | Where-Object name -Like "TABLEAU_SERVER_INSTALL*").Value + "\Tableau Server\packages\"
+$build_number = Get-ChildItem -Path env: | Where-Object Name -like "tableau_server_data_dir_ver*"
+
+#If we didn't get a Build Number evironment variable, something is wrong and we should stop.
+if (-not($build_number)) {
+
+    $now = Get-Date -Format "hh:mm:ss"
+    Write-Host "$($now) - No build number environment variable found.  Is Tableau Server installed?"
+    Write-Output "$($now) - No build number environment variable found.  Is Tableau Server installed?"
+    Break
+}
+
+#build the explicit path to TSM
+$tsm_path = $install_path + "bin." + $build_number.value + "\tsm.cmd"
+
+#write TSM arguments
+$tsm_ziplogs = ("maintenance ziplogs -o -f daily-ziplogs_$($today_mm_dd)" ).Split()
+$tsm_cleanup = ("maintenance cleanup").Split()
+$tsm_backup = ("maintenance backup -f tableau-backup -d").Split()
+$tsm_export = ("settings export -f f:\tableau_backups\tsm_settings-$($today_mm_dd).json").Split()
+
+#Run Ziplogs, track how long it takes, redirect command output to a log file.
+$now = Get-Date -Format "hh:mm:ss"
+Write-Host -nonewline "$($now) - Zipping logs "
+Write-Output "$($now) - Zipping logs " | Out-File -Encoding unicode -Append -FilePath $script_log
+Write-Output "----- Starting Ziplogs run -----" | Out-File -FilePath $tsm_log 
+$ziplogs_runtime = [math]::Round((Measure-Command {& $tsm_path $tsm_ziplogs | Out-File -FilePath $tsm_log}).TotalSeconds,2)
+Write-Output "completed in $($ziplogs_runtime) seconds." | Out-File -Encoding unicode -Append -FilePath $script_log
+Write-Host "completed in $($ziplogs_runtime) seconds."
+Write-Output "Ziplogs,$($now),$($ziplogs_runtime)" | Out-File -Encoding unicode -Append -FilePath $time_tracker
+
+#Run Cleanup, track how long it takes, redirect command output to a log file.
+$now = Get-Date -Format "hh:mm:ss"
+Write-Host -NoNewline "$($now) - Cleaning up "
+Write-Output "$($now) - Cleaning up " | Out-File -Encoding unicode -Append -FilePath $script_log
+Write-Output "----- Starting Cleanup run -----" | Out-File -FilePath $tsm_log -append
+$cleanup_runtime = [math]::round((Measure-Command {& $tsm_path $tsm_cleanup | Out-File -FilePath $tsm_log -append}).TotalSeconds, 2)
+Write-Output "completed in $($cleanup_runtime) seconds." | Out-File -Encoding unicode -Append -FilePath $script_log
+Write-Host "completed in $($cleanup_runtime) seconds."
+Write-Output "Cleanup,$($now),$($cleanup_runtime)"| Out-File -Encoding unicode -Append -FilePath $time_tracker
+
+#Run backup, track how long it takes, redirect command output to a log file.
+$now = Get-Date -Format "hh:mm:ss"
+Write-Host -NoNewline "$($now) - Backing up"
+Write-Output "$($now) - Backing up " | Out-File -Encoding unicode -Append -FilePath $script_log
+Write-Output " ------ Starting backup run -----" | Out-File -FilePath $tsm_log -append
+$backup_runtime = [math]::round((Measure-Command {& $tsm_path $tsm_backup | Out-File -FilePath $tsm_log -append}).TotalSeconds,2)
+Write-Output "completed in $($backup_runtime) seconds." | Out-File -Encoding unicode -Append -FilePath $script_log
+Write-Host "completed in $($backup_runtime) seconds."
+Write-Output "Backup,$($now),$($backup_runtime)"| Out-File -Encoding unicode -Append -FilePath $time_tracker
+
+#Export Tableau Server settings, track how long it takes, redirect command output to a log file.
+$now = Get-Date -Format "hh:mm:ss"
+Write-Host -NoNewline "$($now) - Exporting configuration "
+Write-Output "$($now) - Exporting configuration " | Out-File -Encoding unicode -Append -FilePath $script_log
+Write-Output " ----- Starting Configuration Export ----- " | Out-File -FilePath $tsm_log -Append
+$export_runtime = [math]::Round((Measure-Command {& $tsm_path $tsm_export | Out-File -FilePath $tsm_log -Append}).TotalSeconds,2)
+Write-Output "completed in $($export_runtime) seconds." | Out-file -Encoding unicode -Append -FilePath $script_log
+Write-Host "Completed in $($export_runtime) seconds."
+Write-Output "Settings Export,$($now),$($export_runtime)" | Out-File -Encoding unicode -Append -FilePath $time_tracker
+
+#get total runtime
+$now = Get-Date 
+$complete_runtime = New-TimeSpan -Start $start_time -End $now
+$complete_runtime_minutes = [math]::round($complete_runtime.TotalMinutes,2)
+$complete_runtime_seconds = [math]::round($complete_runtime.TotalSeconds,2)
+
+Write-Host "Maintenance complete.  Total runtime:  $($complete_runtime_minutes) minutes"
+Write-Output "Maintenance Complete.  Total runtime:  $($complete_runtime_minutes) minutes" | Out-File -Encoding unicode -append -FilePath $script_log
+Write-Output "Complete,$($today_mm_dd_yyyy),$($complete_runtime_seconds)" | Out-File -Encoding unicode -Append -FilePath $time_tracker
